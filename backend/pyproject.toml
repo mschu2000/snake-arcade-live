@@ -18,3 +18,7 @@ dev = [
 testpaths = ["tests"]
 pythonpath = ["."]
 
+[dependency-groups]
+dev = [
+    "httpx2>=2.4.0",
+]

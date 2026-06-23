@@ -1,0 +1,7 @@
+{
+  "name": "snake-arena-backend",
+  "private": true,
+  "scripts": {
+    "test": "./.venv/bin/python -m pytest -q"
+  }
+}

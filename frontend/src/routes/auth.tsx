@@ -7,7 +7,10 @@ export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
       { title: "Sign in — Snake Arena" },
-      { name: "description", content: "Sign in or create an account to submit scores and broadcast your game." },
+      {
+        name: "description",
+        content: "Sign in or create an account to submit scores and broadcast your game.",
+      },
       { property: "og:title", content: "Sign in — Snake Arena" },
       { property: "og:description", content: "Sign in or sign up to play Snake Arena." },
     ],
@@ -72,7 +75,7 @@ function AuthPage() {
           <p className="text-sm text-muted-foreground mt-1">
             {mode === "signin"
               ? "Pick up where you left off."
-              : "Mock backend — credentials live in your browser only."}
+              : "Your account is stored on the backend and shared across devices."}
           </p>
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
             <label className="block">
