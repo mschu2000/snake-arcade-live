@@ -18,8 +18,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN useradd --create-home --uid 10001 appuser && mkdir -p /app && chown appuser:appuser /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nodejs npm \
+    && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
     && rm -rf /var/lib/apt/lists/*
+
+ARG NODE_VERSION=22.17.1
+RUN arch="$(dpkg --print-architecture)" \
+    && case "$arch" in \
+      amd64) node_arch="x64" ;; \
+      arm64) node_arch="arm64" ;; \
+      *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSLo /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${node_arch}.tar.xz" \
+    && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
+    && rm -f /tmp/node.tar.xz
 
 WORKDIR /app
 
