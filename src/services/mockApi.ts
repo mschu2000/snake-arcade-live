@@ -56,17 +56,15 @@ function chooseBotDir(state: GameState): Direction {
   return state.dir;
 }
 
+const DIR_DELTA: Record<Direction, Point> = {
+  up: { x: 0, y: -1 },
+  down: { x: 0, y: 1 },
+  left: { x: -1, y: 0 },
+  right: { x: 1, y: 0 },
+};
+
 function nextHead(head: Point, dir: Direction, state: GameState): Point | null {
-  const delta: Record<Direction, Point> = {
-    up: { x: 0, y: -1 },
-    down: { x: 0, y: 1 },
-    left: { x: -1, y: 0 },
-    right: { x: 1, y: 0 },
-  }[dir] as unknown as Record<Direction, Point>;
-  // ^ small hack: actually delta is already a Point — re-fetch correctly:
-  const d: Point = (
-    { up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } } as Record<Direction, Point>
-  )[dir];
+  const d = DIR_DELTA[dir];
   let x = head.x + d.x;
   let y = head.y + d.y;
   if (state.mode === "wrap") {
@@ -76,7 +74,6 @@ function nextHead(head: Point, dir: Direction, state: GameState): Point | null {
     return null;
   }
   return { x, y };
-  void delta;
 }
 
 class MockApi implements SnakeApi {
