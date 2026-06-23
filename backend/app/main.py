@@ -51,6 +51,12 @@ def _frontend_ssr_script() -> Path:
     return Path(__file__).with_name("frontend_ssr.mjs")
 
 
+def _frontend_ssr_is_available() -> bool:
+    script = _frontend_ssr_script()
+    server_entry = FRONTEND_DIST_DIR / "server" / "server.js"
+    return script.is_file() and server_entry.is_file()
+
+
 async def _wait_for_frontend_ssr_ready(timeout_seconds: float = 15.0) -> None:
     deadline = asyncio.get_running_loop().time() + timeout_seconds
     url = f"{FRONTEND_SSR_URL}/__health"
@@ -72,6 +78,10 @@ async def _wait_for_frontend_ssr_ready(timeout_seconds: float = 15.0) -> None:
 
 
 async def _start_frontend_ssr() -> None:
+    if not _frontend_ssr_is_available():
+        frontend_ssr.process = None
+        return
+
     if frontend_ssr.process is not None and frontend_ssr.process.returncode is None:
         return
 
@@ -105,6 +115,9 @@ async def _stop_frontend_ssr() -> None:
 
 
 async def _proxy_frontend_request(request: Request) -> Response:
+    if frontend_ssr.process is None or frontend_ssr.process.returncode is not None:
+        return JSONResponse({"detail": "Frontend SSR bundle is not available"}, status_code=503)
+
     url = f"{FRONTEND_SSR_URL}{request.url.path}"
     if request.url.query:
         url = f"{url}?{request.url.query}"
