@@ -220,10 +220,12 @@ class MockApi implements SnakeApi {
 
   // ---------- bots ----------
   private startBots() {
-    const bots: { id: string; name: string; mode: Mode; state: GameState }[] = BOT_NAMES.map((name, i) => {
-      const mode: Mode = i % 2 === 0 ? "wrap" : "walls";
-      return { id: `bot-${i}`, name, mode, state: createGame({ width: 22, height: 22, mode }) };
-    });
+    const bots: { id: string; name: string; mode: Mode; state: GameState }[] = BOT_NAMES.map(
+      (name, i) => {
+        const mode: Mode = i % 2 === 0 ? "wrap" : "walls";
+        return { id: `bot-${i}`, name, mode, state: createGame({ width: 22, height: 22, mode }) };
+      },
+    );
     const publish = () => {
       for (const b of bots) {
         const dir = chooseBotDir(b.state);
@@ -244,9 +246,19 @@ class MockApi implements SnakeApi {
     publish();
     this.botInterval = setInterval(publish, 180);
   }
+
+  dispose() {
+    if (this.botInterval) {
+      clearInterval(this.botInterval);
+      this.botInterval = null;
+    }
+    this.authSubs.clear();
+    this.gamesSubs.clear();
+    this.singleSubs.clear();
+  }
 }
 
-let instance: SnakeApi | null = null;
+let instance: MockApi | null = null;
 export function getApi(): SnakeApi {
   if (!instance) instance = new MockApi();
   return instance;
@@ -254,6 +266,7 @@ export function getApi(): SnakeApi {
 
 // test helper
 export function __resetApiForTests() {
+  instance?.dispose();
   if (isBrowser) {
     window.localStorage.removeItem(USERS_KEY);
     window.localStorage.removeItem(SESSION_KEY);
