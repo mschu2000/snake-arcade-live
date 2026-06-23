@@ -39,7 +39,7 @@ def upgrade() -> None:
         sa.Column("username", sa.String(length=80), nullable=False),
         sa.Column("mode", sa.String(length=8), nullable=False),
         sa.Column("score", sa.Integer(), nullable=False),
-        sa.Column("created_at", sa.Integer(), nullable=False),
+        sa.Column("created_at", sa.BigInteger(), nullable=False),
     )
     op.create_index(op.f("ix_scores_created_at"), "scores", ["created_at"], unique=False)
     op.create_index(op.f("ix_scores_mode"), "scores", ["mode"], unique=False)
@@ -53,7 +53,7 @@ def upgrade() -> None:
         sa.Column("mode", sa.String(length=8), nullable=False),
         sa.Column("state", sa.JSON(), nullable=False),
         sa.Column("is_bot", sa.Boolean(), nullable=False),
-        sa.Column("updated_at", sa.Integer(), nullable=False),
+        sa.Column("updated_at", sa.BigInteger(), nullable=False),
     )
     op.create_index(op.f("ix_live_games_is_bot"), "live_games", ["is_bot"], unique=False)
     op.create_index(op.f("ix_live_games_mode"), "live_games", ["mode"], unique=False)

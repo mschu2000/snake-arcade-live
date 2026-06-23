@@ -4,11 +4,11 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, create_engine, inspect
+from sqlalchemy import BigInteger, JSON, Boolean, ForeignKey, Integer, String, Text, create_engine, inspect
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.pool import StaticPool
 
-DEFAULT_DATABASE_URL = "postgresql+psycopg://postgres@localhost:5432/snake_arena"
+DEFAULT_DATABASE_URL = "postgresql+psycopg://snakearena:snakearena@localhost:5432/snakearena"
 DEFAULT_SQLITE_FALLBACK_URL = "sqlite:////tmp/snake_arena.db"
 APP_TABLES = ("users", "sessions", "scores", "live_games")
 
@@ -41,7 +41,7 @@ class ScoreRow(Base):
     username: Mapped[str] = mapped_column(String(80), nullable=False)
     mode: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
     score: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    created_at: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    created_at: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
 
 
 class LiveGameRow(Base):
@@ -52,7 +52,7 @@ class LiveGameRow(Base):
     mode: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
     state: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     is_bot: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
-    updated_at: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
 
 
 def make_engine(database_url: str):

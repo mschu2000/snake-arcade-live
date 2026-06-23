@@ -4,7 +4,11 @@
 PORT ?= 8000
 CONTAINER_ENGINE ?= podman
 POSTGRES_HOST ?= host.containers.internal
-DATABASE_URL ?= postgresql+psycopg://postgres@$(POSTGRES_HOST):5432/snake_arena
+POSTGRES_PORT ?= 5432
+POSTGRES_USER ?= snakearena
+POSTGRES_PASSWORD ?= snakearena
+POSTGRES_DB ?= snakearena
+DATABASE_URL ?= postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)
 
 help:
 	@printf '%s\n' \
