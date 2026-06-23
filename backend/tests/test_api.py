@@ -8,23 +8,9 @@ from app.main import app, store
 
 @pytest.fixture(autouse=True)
 def reset_store():
-    store.users_by_name.clear()
-    store.users_by_id.clear()
-    store.sessions.clear()
-    store.scores.clear()
-    store.games.clear()
-    store.game_subscribers.clear()
-    store.active_subscribers.clear()
-    store.bot_states.clear()
+    store.reset_for_tests()
     yield
-    store.users_by_name.clear()
-    store.users_by_id.clear()
-    store.sessions.clear()
-    store.scores.clear()
-    store.games.clear()
-    store.game_subscribers.clear()
-    store.active_subscribers.clear()
-    store.bot_states.clear()
+    store.reset_for_tests()
 
 
 def client() -> TestClient:
@@ -83,7 +69,8 @@ def test_bearer_tokens_work_and_passwords_are_hashed():
         token = signup.headers["authorization"]
         assert token.startswith("Bearer ")
 
-        stored = store.users_by_name["dana"]
+        stored = store.get_user_row("dana")
+        assert stored is not None
         assert stored.password_hash != "pass1234"
         assert stored.password_hash.startswith("pbkdf2_sha256$")
 

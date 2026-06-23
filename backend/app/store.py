@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import secrets
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
-from typing import AsyncIterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import AsyncIterator, Iterator
+
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, create_engine, delete, desc, select
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from .auth import hash_password, verify_password
 from .models import LiveGame, Mode, ScoreEntry, SubmitScoreRequest, User
@@ -14,24 +21,70 @@ from .snake_engine import GameState, Point, create_game, step, turn
 BOT_NAMES = ["NeonViper", "GlitchHydra", "PixelPython", "VaporBoa"]
 
 
-@dataclass
-class StoredUser:
-    id: str
-    username: str
-    password_hash: str
+class Base(DeclarativeBase):
+    pass
+
+
+class UserRow(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), nullable=False)
+    normalized_username: Mapped[str] = mapped_column(String(80), nullable=False, unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class SessionRow(Base):
+    __tablename__ = "sessions"
+
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+
+class ScoreRow(Base):
+    __tablename__ = "scores"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    username: Mapped[str] = mapped_column(String(80), nullable=False)
+    mode: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    score: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+
+
+class LiveGameRow(Base):
+    __tablename__ = "live_games"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    mode: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    state: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    is_bot: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
+    updated_at: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+
+
+def _make_engine(database_url: str):
+    engine_kwargs: dict[str, object] = {}
+    if database_url.startswith("sqlite"):
+        engine_kwargs["connect_args"] = {"check_same_thread": False}
+        if ":memory:" in database_url:
+            engine_kwargs["poolclass"] = StaticPool
+    return create_engine(database_url, future=True, **engine_kwargs)
 
 
 @dataclass
 class SnakeArenaStore:
-    users_by_name: dict[str, StoredUser] = field(default_factory=dict)
-    users_by_id: dict[str, StoredUser] = field(default_factory=dict)
-    sessions: dict[str, str] = field(default_factory=dict)
-    scores: list[ScoreEntry] = field(default_factory=list)
-    games: dict[str, LiveGame] = field(default_factory=dict)
-    game_subscribers: dict[str, set[asyncio.Queue[LiveGame | None]]] = field(default_factory=lambda: defaultdict(set))
-    active_subscribers: set[asyncio.Queue[list[LiveGame]]] = field(default_factory=set)
-    bot_task: asyncio.Task | None = None
-    bot_states: list[dict[str, object]] = field(default_factory=list)
+    database_url: str | None = None
+
+    def __post_init__(self) -> None:
+        self.database_url = self.database_url or os.getenv("DATABASE_URL", "sqlite:////tmp/snake_arena.db")
+        self.engine = _make_engine(self.database_url)
+        self.session_factory = sessionmaker(bind=self.engine, expire_on_commit=False, future=True)
+        Base.metadata.create_all(self.engine)
+        self.game_subscribers: dict[str, set[asyncio.Queue[LiveGame | None]]] = defaultdict(set)
+        self.active_subscribers: set[asyncio.Queue[list[LiveGame]]] = set()
+        self.bot_task: asyncio.Task | None = None
+        self.bot_states: list[dict[str, object]] = []
 
     def _uid(self) -> str:
         return secrets.token_urlsafe(8)
@@ -39,73 +92,167 @@ class SnakeArenaStore:
     def _now_ms(self) -> int:
         return int(time.time() * 1000)
 
+    @contextmanager
+    def _session(self) -> Iterator[Session]:
+        session = self.session_factory()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    @staticmethod
+    def _normalize_username(username: str) -> str:
+        return username.strip().lower()
+
+    @staticmethod
+    def _user_from_row(row: UserRow) -> User:
+        return User(id=row.id, username=row.username)
+
+    @staticmethod
+    def _score_from_row(row: ScoreRow) -> ScoreEntry:
+        return ScoreEntry(
+            id=row.id,
+            userId=row.user_id,
+            username=row.username,
+            mode=row.mode,  # type: ignore[arg-type]
+            score=row.score,
+            createdAt=row.created_at,
+        )
+
+    @staticmethod
+    def _live_game_from_row(row: LiveGameRow) -> LiveGame:
+        state = row.state
+        if isinstance(state, str):
+            state = json.loads(state)
+        return LiveGame(
+            id=row.id,
+            username=row.username,
+            mode=row.mode,  # type: ignore[arg-type]
+            state=state,  # type: ignore[arg-type]
+            isBot=row.is_bot,
+            updatedAt=row.updated_at,
+        )
+
     def create_user(self, username: str, password: str) -> User:
-        key = username.strip().lower()
-        if key in self.users_by_name:
-            raise ValueError("Username already taken")
-        stored = StoredUser(id=self._uid(), username=username.strip(), password_hash=hash_password(password))
-        self.users_by_name[key] = stored
-        self.users_by_id[stored.id] = stored
-        return User(id=stored.id, username=stored.username)
+        normalized = self._normalize_username(username)
+        with self._session() as session:
+            existing = session.scalar(select(UserRow).where(UserRow.normalized_username == normalized))
+            if existing:
+                raise ValueError("Username already taken")
+            stored = UserRow(
+                id=self._uid(),
+                username=username.strip(),
+                normalized_username=normalized,
+                password_hash=hash_password(password),
+            )
+            session.add(stored)
+            session.flush()
+            return self._user_from_row(stored)
 
     def authenticate(self, username: str, password: str) -> User:
-        stored = self.users_by_name.get(username.strip().lower())
-        if not stored or not verify_password(password, stored.password_hash):
-            raise LookupError("Invalid username or password")
-        return User(id=stored.id, username=stored.username)
+        normalized = self._normalize_username(username)
+        with self._session() as session:
+            stored = session.scalar(select(UserRow).where(UserRow.normalized_username == normalized))
+            if not stored or not verify_password(password, stored.password_hash):
+                raise LookupError("Invalid username or password")
+            return self._user_from_row(stored)
+
+    def get_user_row(self, username: str) -> UserRow | None:
+        normalized = self._normalize_username(username)
+        with self._session() as session:
+            return session.scalar(select(UserRow).where(UserRow.normalized_username == normalized))
 
     def create_session(self, user: User) -> str:
         token = secrets.token_urlsafe(24)
-        self.sessions[token] = user.id
+        with self._session() as session:
+            session.add(SessionRow(token=token, user_id=user.id))
         return token
 
     def clear_session(self, token: str | None) -> None:
-        if token:
-            self.sessions.pop(token, None)
+        if not token:
+            return
+        with self._session() as session:
+            session.execute(delete(SessionRow).where(SessionRow.token == token))
 
     def user_from_session(self, token: str | None) -> User | None:
         if not token:
             return None
-        user_id = self.sessions.get(token)
-        if not user_id:
-            return None
-        stored = self.users_by_id.get(user_id)
-        if not stored:
-            return None
-        return User(id=stored.id, username=stored.username)
+        with self._session() as session:
+            row = session.scalar(
+                select(UserRow)
+                .join(SessionRow, SessionRow.user_id == UserRow.id)
+                .where(SessionRow.token == token)
+            )
+            return self._user_from_row(row) if row else None
 
     def submit_score(self, user: User, payload: SubmitScoreRequest) -> ScoreEntry:
-        entry = ScoreEntry(
+        entry = ScoreRow(
             id=self._uid(),
-            userId=user.id,
+            user_id=user.id,
             username=user.username,
             mode=payload.mode,
             score=payload.score,
-            createdAt=self._now_ms(),
+            created_at=self._now_ms(),
         )
-        self.scores.append(entry)
-        return entry
+        with self._session() as session:
+            session.add(entry)
+            session.flush()
+            return self._score_from_row(entry)
 
     def get_leaderboard(self, mode: Mode, limit: int = 10) -> list[ScoreEntry]:
-        return sorted(
-            [score for score in self.scores if score.mode == mode],
-            key=lambda s: (-s.score, s.createdAt),
-        )[:limit]
+        with self._session() as session:
+            rows = session.scalars(
+                select(ScoreRow).where(ScoreRow.mode == mode).order_by(desc(ScoreRow.score), ScoreRow.created_at).limit(limit)
+            ).all()
+            return [self._score_from_row(row) for row in rows]
 
     def list_active_games(self) -> list[LiveGame]:
-        return sorted(self.games.values(), key=lambda g: g.state.score, reverse=True)
+        with self._session() as session:
+            rows = session.scalars(select(LiveGameRow)).all()
+            games = [self._live_game_from_row(row) for row in rows]
+            return sorted(games, key=lambda g: g.state.score, reverse=True)
 
     def get_game(self, game_id: str) -> LiveGame | None:
-        return self.games.get(game_id)
+        with self._session() as session:
+            row = session.get(LiveGameRow, game_id)
+            return self._live_game_from_row(row) if row else None
 
     def publish_game(self, game: LiveGame) -> LiveGame:
-        self.games[game.id] = game
+        with self._session() as session:
+            row = session.get(LiveGameRow, game.id)
+            if row is None:
+                row = LiveGameRow(
+                    id=game.id,
+                    username=game.username,
+                    mode=game.mode,
+                    state=game.state.model_dump(mode="json"),
+                    is_bot=game.isBot,
+                    updated_at=game.updatedAt,
+                )
+                session.add(row)
+            else:
+                row.username = game.username
+                row.mode = game.mode
+                row.state = game.state.model_dump(mode="json")
+                row.is_bot = game.isBot
+                row.updated_at = game.updatedAt
+            session.flush()
         self._notify_games()
         self._notify_game(game.id)
         return game
 
     def remove_game(self, game_id: str) -> None:
-        if self.games.pop(game_id, None) is not None:
+        removed = False
+        with self._session() as session:
+            row = session.get(LiveGameRow, game_id)
+            if row is not None:
+                session.delete(row)
+                removed = True
+        if removed:
             self._notify_games()
             self._notify_game(game_id)
 
@@ -142,7 +289,9 @@ class SnakeArenaStore:
                 self.game_subscribers.pop(game_id, None)
 
     def seed_demo_data(self) -> None:
-        if self.users_by_name:
+        with self._session() as session:
+            has_users = session.scalar(select(UserRow.id).limit(1)) is not None
+        if has_users:
             return
 
         users = {
@@ -187,6 +336,16 @@ class SnakeArenaStore:
                     "state": create_game(mode=mode),
                 }
             )
+
+    def reset_for_tests(self) -> None:
+        with self._session() as session:
+            session.execute(delete(SessionRow))
+            session.execute(delete(ScoreRow))
+            session.execute(delete(LiveGameRow))
+            session.execute(delete(UserRow))
+        self.game_subscribers.clear()
+        self.active_subscribers.clear()
+        self.bot_states.clear()
 
     async def run_bots(self) -> None:
         self.seed_bots()
