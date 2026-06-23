@@ -1,4 +1,4 @@
-.PHONY: install backend frontend backend-tests frontend-tests test
+.PHONY: install backend frontend dev backend-tests frontend-tests test
 
 install:
 	cd backend && uv sync
@@ -9,6 +9,15 @@ backend:
 
 frontend:
 	cd frontend && npm run dev
+
+dev:
+	@set -e; \
+	( cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 ) & \
+	backend_pid=$$!; \
+	( cd frontend && npm run dev ) & \
+	frontend_pid=$$!; \
+	trap 'kill $$backend_pid $$frontend_pid 2>/dev/null || true' INT TERM EXIT; \
+	wait $$backend_pid $$frontend_pid
 
 backend-tests:
 	cd backend && uv run pytest -q
