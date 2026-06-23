@@ -13,11 +13,12 @@ FROM python:3.12-slim AS backend-runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \
+    PIP_ROOT_USER_ACTION=ignore \
     FRONTEND_DIST_DIR=/app/backend/static
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir uv
+RUN pip install --no-cache-dir --root-user-action=ignore uv
 
 COPY backend/pyproject.toml backend/uv.lock ./backend/
 
