@@ -13,20 +13,25 @@ FROM python:3.12-slim AS backend-runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \
-    PIP_ROOT_USER_ACTION=ignore \
     FRONTEND_DIST_DIR=/app/backend/static
+
+RUN useradd --create-home --uid 10001 appuser && mkdir -p /app && chown appuser:appuser /app
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir --root-user-action=ignore uv
+USER appuser
 
-COPY backend/pyproject.toml backend/uv.lock ./backend/
+ENV PATH=/home/appuser/.local/bin:$PATH
+
+RUN python -m pip install --user --no-cache-dir uv
+
+COPY --chown=appuser:appuser backend/pyproject.toml backend/uv.lock ./backend/
 
 WORKDIR /app/backend
 RUN uv sync --frozen --no-dev --no-install-project
 
-COPY backend/ ./
-COPY --from=frontend-build /app/frontend/dist/client ./static
+COPY --chown=appuser:appuser backend/ ./
+COPY --from=frontend-build --chown=appuser:appuser /app/frontend/dist/client ./static
 
 EXPOSE 8000
 
