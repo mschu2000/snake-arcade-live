@@ -17,6 +17,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN useradd --create-home --uid 10001 appuser && mkdir -p /app && chown appuser:appuser /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 USER appuser
@@ -31,7 +35,8 @@ WORKDIR /app/backend
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY --chown=appuser:appuser backend/ ./
-COPY --from=frontend-build --chown=appuser:appuser /app/frontend/dist/client ./static
+COPY --from=frontend-build --chown=appuser:appuser /app/frontend/dist/client ./static/client
+COPY --from=frontend-build --chown=appuser:appuser /app/frontend/dist/server ./static/server
 
 EXPOSE 8000
 
