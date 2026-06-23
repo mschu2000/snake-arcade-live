@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 .PHONY: install backend frontend dev backend-tests frontend-tests test docker-build docker-run help
 
-PORT ?= 8000
+PORT ?= 8080
 
 help:
 	@printf '%s\n' \
