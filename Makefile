@@ -1,8 +1,8 @@
-.PHONY: install backend frontend dev backend-tests frontend-tests test docker-build docker-run
 .DEFAULT_GOAL := help
 .PHONY: install backend frontend dev backend-tests frontend-tests test docker-build docker-run help
 
-PORT ?= 8080
+PORT ?= 8000
+CONTAINER_ENGINE ?= podman
 
 help:
 	@printf '%s\n' \
@@ -48,7 +48,7 @@ test-integration:
 	cd backend && uv run pytest tests_integration/
 
 docker-build:
-	docker build -f backend/Dockerfile -t snake-arena .
+	$(CONTAINER_ENGINE) build -f backend/Dockerfile -t snake-arena .
 
 docker-run:
-	docker run --rm -p $(PORT):8000 snake-arena
+	$(CONTAINER_ENGINE) run --rm -p $(PORT):8000 snake-arena
