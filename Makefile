@@ -48,7 +48,7 @@ test-integration:
 	cd backend && uv run pytest tests_integration/
 
 docker-build:
-	$(CONTAINER_ENGINE) build -f backend/Dockerfile -t snake-arena .
+	$(CONTAINER_ENGINE) build -f Dockerfile -t snake-arena .
 
 docker-run:
 	$(CONTAINER_ENGINE) run --rm -p $(PORT):8000 snake-arena
