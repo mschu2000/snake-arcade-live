@@ -10,66 +10,15 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator, Iterator
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, create_engine, delete, desc, select
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy import delete, desc, select
+from sqlalchemy.orm import Session, sessionmaker
 
 from .auth import hash_password, verify_password
+from .db import DEFAULT_DATABASE_URL, LiveGameRow, ScoreRow, SessionRow, UserRow, make_engine, run_migrations
 from .models import LiveGame, Mode, ScoreEntry, SubmitScoreRequest, User
 from .snake_engine import GameState, Point, create_game, step, turn
 
 BOT_NAMES = ["NeonViper", "GlitchHydra", "PixelPython", "VaporBoa"]
-
-
-class Base(DeclarativeBase):
-    pass
-
-
-class UserRow(Base):
-    __tablename__ = "users"
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    username: Mapped[str] = mapped_column(String(80), nullable=False)
-    normalized_username: Mapped[str] = mapped_column(String(80), nullable=False, unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
-
-
-class SessionRow(Base):
-    __tablename__ = "sessions"
-
-    token: Mapped[str] = mapped_column(String(64), primary_key=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-
-
-class ScoreRow(Base):
-    __tablename__ = "scores"
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    username: Mapped[str] = mapped_column(String(80), nullable=False)
-    mode: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
-    score: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    created_at: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-
-
-class LiveGameRow(Base):
-    __tablename__ = "live_games"
-
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    username: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    mode: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
-    state: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
-    is_bot: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
-    updated_at: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-
-
-def _make_engine(database_url: str):
-    engine_kwargs: dict[str, object] = {}
-    if database_url.startswith("sqlite"):
-        engine_kwargs["connect_args"] = {"check_same_thread": False}
-        if ":memory:" in database_url:
-            engine_kwargs["poolclass"] = StaticPool
-    return create_engine(database_url, future=True, **engine_kwargs)
 
 
 @dataclass
@@ -77,10 +26,10 @@ class SnakeArenaStore:
     database_url: str | None = None
 
     def __post_init__(self) -> None:
-        self.database_url = self.database_url or os.getenv("DATABASE_URL", "sqlite:////tmp/snake_arena.db")
-        self.engine = _make_engine(self.database_url)
+        self.database_url = self.database_url or os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+        self.engine = make_engine(self.database_url)
         self.session_factory = sessionmaker(bind=self.engine, expire_on_commit=False, future=True)
-        Base.metadata.create_all(self.engine)
+        run_migrations(self.engine)
         self.game_subscribers: dict[str, set[asyncio.Queue[LiveGame | None]]] = defaultdict(set)
         self.active_subscribers: set[asyncio.Queue[list[LiveGame]]] = set()
         self.bot_task: asyncio.Task | None = None
