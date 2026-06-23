@@ -1,0 +1,2 @@
+"""Snake Arena backend package."""
+
