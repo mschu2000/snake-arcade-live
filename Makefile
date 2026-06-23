@@ -1,8 +1,10 @@
 .DEFAULT_GOAL := help
-.PHONY: install backend frontend dev backend-tests frontend-tests test docker-build docker-run help
+.PHONY: install backend frontend dev backend-tests frontend-tests test docker-build docker-run podman-up podman-down podman-logs help
 
 PORT ?= 8000
 CONTAINER_ENGINE ?= podman
+APP_CONTAINER_NAME ?= snake-arena-app
+POSTGRES_CONTAINER_NAME ?= snake-db
 POSTGRES_HOST ?= host.containers.internal
 POSTGRES_PORT ?= 5432
 POSTGRES_USER ?= snakearena
@@ -58,3 +60,28 @@ docker-build:
 
 docker-run:
 	$(CONTAINER_ENGINE) run --rm -p $(PORT):8000 -e DATABASE_URL="$(DATABASE_URL)" snake-arena
+
+podman-up:
+	@set -e; \
+	$(CONTAINER_ENGINE) rm -f $(APP_CONTAINER_NAME) $(POSTGRES_CONTAINER_NAME) >/dev/null 2>&1 || true; \
+	$(CONTAINER_ENGINE) run -d --name $(POSTGRES_CONTAINER_NAME) \
+		-e POSTGRES_USER=$(POSTGRES_USER) \
+		-e POSTGRES_PASSWORD=$(POSTGRES_PASSWORD) \
+		-e POSTGRES_DB=$(POSTGRES_DB) \
+		-p $(POSTGRES_PORT):5432 \
+		-v snake_pgdata:/var/lib/postgresql/data \
+		postgres:16-alpine >/dev/null; \
+	until $(CONTAINER_ENGINE) exec $(POSTGRES_CONTAINER_NAME) pg_isready -U $(POSTGRES_USER) -d $(POSTGRES_DB) >/dev/null 2>&1; do \
+		sleep 1; \
+	done; \
+	$(CONTAINER_ENGINE) build -f Dockerfile -t snake-arena .; \
+	$(CONTAINER_ENGINE) run -d --name $(APP_CONTAINER_NAME) --rm \
+		-p $(PORT):8000 \
+		-e DATABASE_URL="$(DATABASE_URL)" \
+		snake-arena >/dev/null
+
+podman-down:
+	-$(CONTAINER_ENGINE) rm -f $(APP_CONTAINER_NAME) $(POSTGRES_CONTAINER_NAME)
+
+podman-logs:
+	$(CONTAINER_ENGINE) logs -f $(APP_CONTAINER_NAME)
