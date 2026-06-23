@@ -3,6 +3,8 @@
 
 PORT ?= 8000
 CONTAINER_ENGINE ?= podman
+POSTGRES_HOST ?= host.containers.internal
+DATABASE_URL ?= postgresql+psycopg://postgres@$(POSTGRES_HOST):5432/snake_arena
 
 help:
 	@printf '%s\n' \
@@ -51,4 +53,4 @@ docker-build:
 	$(CONTAINER_ENGINE) build -f Dockerfile -t snake-arena .
 
 docker-run:
-	$(CONTAINER_ENGINE) run --rm -p $(PORT):8000 snake-arena
+	$(CONTAINER_ENGINE) run --rm -p $(PORT):8000 -e DATABASE_URL="$(DATABASE_URL)" snake-arena
