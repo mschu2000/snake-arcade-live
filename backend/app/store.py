@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import secrets
 import time
@@ -29,6 +30,7 @@ from .models import LiveGame, Mode, ScoreEntry, SubmitScoreRequest, User
 from .snake_engine import GameState, Point, create_game, step, turn
 
 BOT_NAMES = ["NeonViper", "GlitchHydra", "PixelPython", "VaporBoa"]
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -44,10 +46,12 @@ class SnakeArenaStore:
         except OperationalError:
             if self.database_url != DEFAULT_DATABASE_URL:
                 raise
+            logger.warning("Database unavailable at %s; falling back to %s", DEFAULT_DATABASE_URL, DEFAULT_SQLITE_FALLBACK_URL)
             self.database_url = DEFAULT_SQLITE_FALLBACK_URL
             self.engine = make_engine(self.database_url)
             self.session_factory = sessionmaker(bind=self.engine, expire_on_commit=False, future=True)
             run_migrations(self.engine)
+        logger.info("Using database URL: %s", self.database_url)
         self.game_subscribers: dict[str, set[asyncio.Queue[LiveGame | None]]] = defaultdict(set)
         self.active_subscribers: set[asyncio.Queue[list[LiveGame]]] = set()
         self.bot_task: asyncio.Task | None = None
