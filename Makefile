@@ -64,7 +64,7 @@ docker-run:
 podman-up:
 	@set -e; \
 	$(CONTAINER_ENGINE) rm -f $(APP_CONTAINER_NAME) $(POSTGRES_CONTAINER_NAME) >/dev/null 2>&1 || true; \
-	$(CONTAINER_ENGINE) run -d --name $(POSTGRES_CONTAINER_NAME) \
+	$(CONTAINER_ENGINE) run -d --replace --name $(POSTGRES_CONTAINER_NAME) \
 		-e POSTGRES_USER=$(POSTGRES_USER) \
 		-e POSTGRES_PASSWORD=$(POSTGRES_PASSWORD) \
 		-e POSTGRES_DB=$(POSTGRES_DB) \
@@ -75,10 +75,19 @@ podman-up:
 		sleep 1; \
 	done; \
 	$(CONTAINER_ENGINE) build -f Dockerfile -t snake-arena .; \
-	$(CONTAINER_ENGINE) run -d --name $(APP_CONTAINER_NAME) --rm \
+	$(CONTAINER_ENGINE) run -d --replace --name $(APP_CONTAINER_NAME) --rm \
 		-p $(PORT):8000 \
 		-e DATABASE_URL="$(DATABASE_URL)" \
-		snake-arena >/dev/null
+		snake-arena >/dev/null; \
+	for i in $$(seq 1 60); do \
+		if curl -fsS "http://127.0.0.1:$(PORT)/openapi.json" >/dev/null 2>&1; then \
+			exit 0; \
+		fi; \
+		sleep 1; \
+	done; \
+	$(CONTAINER_ENGINE) logs --tail 120 $(APP_CONTAINER_NAME); \
+	echo "App did not become ready on http://127.0.0.1:$(PORT)" >&2; \
+	exit 1
 
 podman-down:
 	-$(CONTAINER_ENGINE) rm -f $(APP_CONTAINER_NAME) $(POSTGRES_CONTAINER_NAME)
