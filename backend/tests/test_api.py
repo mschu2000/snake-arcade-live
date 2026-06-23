@@ -9,6 +9,7 @@ from app.main import app, store
 @pytest.fixture(autouse=True)
 def reset_store():
     store.users_by_name.clear()
+    store.users_by_id.clear()
     store.sessions.clear()
     store.scores.clear()
     store.games.clear()
@@ -17,6 +18,7 @@ def reset_store():
     store.bot_states.clear()
     yield
     store.users_by_name.clear()
+    store.users_by_id.clear()
     store.sessions.clear()
     store.scores.clear()
     store.games.clear()
@@ -67,11 +69,37 @@ def test_leaderboard_and_score_submission_require_auth():
 
         walls = c.get("/leaderboard/walls")
         assert walls.status_code == 200
-        assert [entry["score"] for entry in walls.json()] == [80, 30]
+        assert [entry["score"] for entry in walls.json()] == [140, 90, 80, 30]
 
         wrap = c.get("/leaderboard/wrap?limit=1")
         assert wrap.status_code == 200
-        assert [entry["score"] for entry in wrap.json()] == [50]
+        assert [entry["score"] for entry in wrap.json()] == [110]
+
+
+def test_bearer_tokens_work_and_passwords_are_hashed():
+    with client() as c:
+        signup = c.post("/auth/sign-up", json={"username": "dana", "password": "pass1234"})
+        assert signup.status_code == 201
+        token = signup.headers["authorization"]
+        assert token.startswith("Bearer ")
+
+        stored = store.users_by_name["dana"]
+        assert stored.password_hash != "pass1234"
+        assert stored.password_hash.startswith("pbkdf2_sha256$")
+
+        c.cookies.clear()
+        me = c.get("/auth/me", headers={"Authorization": token})
+        assert me.status_code == 200
+        assert me.json()["username"] == "dana"
+
+        score = c.post("/scores", json={"mode": "wrap", "score": 70}, headers={"Authorization": token})
+        assert score.status_code == 201
+
+        signout = c.post("/auth/sign-out", headers={"Authorization": token})
+        assert signout.status_code == 204
+
+        me_after = c.get("/auth/me", headers={"Authorization": token})
+        assert me_after.status_code == 401
 
 
 def test_games_endpoints_expose_bot_games():
@@ -112,4 +140,3 @@ def test_publish_game_requires_auth_and_matches_path():
         c.post("/auth/sign-up", json={"username": "zoe", "password": "pass1234"})
         ok = c.put("/games/me-1", json=payload)
         assert ok.status_code == 200
-

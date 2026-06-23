@@ -1,30 +1,30 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import secrets
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
+from .auth import hash_password, verify_password
 from .models import LiveGame, Mode, ScoreEntry, SubmitScoreRequest, User
 from .snake_engine import GameState, Point, create_game, step, turn
 
 BOT_NAMES = ["NeonViper", "GlitchHydra", "PixelPython", "VaporBoa"]
-COOKIE_NAME = "snake_session"
 
 
 @dataclass
 class StoredUser:
     id: str
     username: str
-    password: str
+    password_hash: str
 
 
 @dataclass
 class SnakeArenaStore:
     users_by_name: dict[str, StoredUser] = field(default_factory=dict)
+    users_by_id: dict[str, StoredUser] = field(default_factory=dict)
     sessions: dict[str, str] = field(default_factory=dict)
     scores: list[ScoreEntry] = field(default_factory=list)
     games: dict[str, LiveGame] = field(default_factory=dict)
@@ -43,13 +43,14 @@ class SnakeArenaStore:
         key = username.strip().lower()
         if key in self.users_by_name:
             raise ValueError("Username already taken")
-        stored = StoredUser(id=self._uid(), username=username.strip(), password=password)
+        stored = StoredUser(id=self._uid(), username=username.strip(), password_hash=hash_password(password))
         self.users_by_name[key] = stored
+        self.users_by_id[stored.id] = stored
         return User(id=stored.id, username=stored.username)
 
     def authenticate(self, username: str, password: str) -> User:
         stored = self.users_by_name.get(username.strip().lower())
-        if not stored or stored.password != password:
+        if not stored or not verify_password(password, stored.password_hash):
             raise LookupError("Invalid username or password")
         return User(id=stored.id, username=stored.username)
 
@@ -68,10 +69,10 @@ class SnakeArenaStore:
         user_id = self.sessions.get(token)
         if not user_id:
             return None
-        for stored in self.users_by_name.values():
-            if stored.id == user_id:
-                return User(id=stored.id, username=stored.username)
-        return None
+        stored = self.users_by_id.get(user_id)
+        if not stored:
+            return None
+        return User(id=stored.id, username=stored.username)
 
     def submit_score(self, user: User, payload: SubmitScoreRequest) -> ScoreEntry:
         entry = ScoreEntry(
@@ -139,6 +140,39 @@ class SnakeArenaStore:
             self.game_subscribers[game_id].discard(queue)
             if not self.game_subscribers[game_id]:
                 self.game_subscribers.pop(game_id, None)
+
+    def seed_demo_data(self) -> None:
+        if self.users_by_name:
+            return
+
+        users = {
+            "ava": self.create_user("ava", "pass1234"),
+            "milo": self.create_user("milo", "pass1234"),
+            "sara": self.create_user("sara", "pass1234"),
+        }
+        self.submit_score(users["ava"], SubmitScoreRequest(mode="walls", score=140))
+        self.submit_score(users["milo"], SubmitScoreRequest(mode="walls", score=90))
+        self.submit_score(users["sara"], SubmitScoreRequest(mode="wrap", score=110))
+        self.publish_game(
+            LiveGame(
+                id="demo-ava",
+                username="ava",
+                mode="walls",
+                state=to_live_state(create_game(mode="walls")),
+                isBot=False,
+                updatedAt=self._now_ms(),
+            )
+        )
+        self.publish_game(
+            LiveGame(
+                id="demo-milo",
+                username="milo",
+                mode="wrap",
+                state=to_live_state(create_game(mode="wrap")),
+                isBot=False,
+                updatedAt=self._now_ms(),
+            )
+        )
 
     def seed_bots(self) -> None:
         if self.bot_states:
@@ -228,3 +262,6 @@ def next_head(head: Point, direction: str, state: GameState) -> Point | None:
     if x < 0 or y < 0 or x >= state.width or y >= state.height:
         return None
     return Point(x, y)
+
+
+store = SnakeArenaStore()
