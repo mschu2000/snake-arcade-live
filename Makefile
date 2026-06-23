@@ -1,4 +1,4 @@
-.PHONY: install backend frontend dev backend-tests frontend-tests test
+.PHONY: install backend frontend dev backend-tests frontend-tests test docker-build docker-run
 
 install:
 	cd backend && uv sync
@@ -29,3 +29,9 @@ test: backend-tests frontend-tests
 
 test-integration:
 	cd backend && uv run pytest tests_integration/
+
+docker-build:
+	docker build -f backend/Dockerfile -t snake-arena .
+
+docker-run:
+	docker run --rm -p 8000:8000 snake-arena
