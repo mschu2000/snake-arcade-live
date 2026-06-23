@@ -10,11 +10,21 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator, Iterator
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy import delete, desc, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from .auth import hash_password, verify_password
-from .db import DEFAULT_DATABASE_URL, LiveGameRow, ScoreRow, SessionRow, UserRow, make_engine, run_migrations
+from .db import (
+    DEFAULT_DATABASE_URL,
+    DEFAULT_SQLITE_FALLBACK_URL,
+    LiveGameRow,
+    ScoreRow,
+    SessionRow,
+    UserRow,
+    make_engine,
+    run_migrations,
+)
 from .models import LiveGame, Mode, ScoreEntry, SubmitScoreRequest, User
 from .snake_engine import GameState, Point, create_game, step, turn
 
@@ -29,7 +39,15 @@ class SnakeArenaStore:
         self.database_url = self.database_url or os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
         self.engine = make_engine(self.database_url)
         self.session_factory = sessionmaker(bind=self.engine, expire_on_commit=False, future=True)
-        run_migrations(self.engine)
+        try:
+            run_migrations(self.engine)
+        except OperationalError:
+            if self.database_url != DEFAULT_DATABASE_URL:
+                raise
+            self.database_url = DEFAULT_SQLITE_FALLBACK_URL
+            self.engine = make_engine(self.database_url)
+            self.session_factory = sessionmaker(bind=self.engine, expire_on_commit=False, future=True)
+            run_migrations(self.engine)
         self.game_subscribers: dict[str, set[asyncio.Queue[LiveGame | None]]] = defaultdict(set)
         self.active_subscribers: set[asyncio.Queue[list[LiveGame]]] = set()
         self.bot_task: asyncio.Task | None = None

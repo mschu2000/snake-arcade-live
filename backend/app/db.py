@@ -8,7 +8,8 @@ from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, create_
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.pool import StaticPool
 
-DEFAULT_DATABASE_URL = "sqlite:////tmp/snake_arena.db"
+DEFAULT_DATABASE_URL = "postgresql+psycopg://postgres@localhost:5432/snake_arena"
+DEFAULT_SQLITE_FALLBACK_URL = "sqlite:////tmp/snake_arena.db"
 APP_TABLES = ("users", "sessions", "scores", "live_games")
 
 
